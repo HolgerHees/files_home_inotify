@@ -101,7 +101,9 @@ class Notify extends Base {
 	
 	private function watchPath(string $path): void {
 		if ($this->fd === null) return;
-		$descriptor = inotify_add_watch($this->fd, $path, \IN_MODIFY + \IN_CREATE + \IN_MOVED_FROM + \IN_MOVED_TO + \IN_DELETE);
+		# The IN_MODIFY event is emitted on a file content change (e.g. via the write() syscall) while IN_CLOSE_WRITE occurs on closing the changed file. 
+		# It means each change operation causes one IN_MODIFY event (it may occur many times during manipulations with an open file) whereas IN_CLOSE_WRITE is emitted only once (on closing the file). 
+		$descriptor = inotify_add_watch($this->fd, $path, \IN_CLOSE_WRITE + \IN_CREATE + \IN_MOVED_FROM + \IN_MOVED_TO + \IN_DELETE);
 		$this->pathMap[$descriptor] = $path;
         #error_log("watch " . $path);
 	}
@@ -193,7 +195,7 @@ class Notify extends Base {
                     $this->unregister( $fullPath );
                 }
             }
-            elseif ($mask & \IN_MODIFY) 
+            elseif ($mask & \IN_CLOSE_WRITE) 
             {
                 $scanPath = $path . '/' . $name;
             }
