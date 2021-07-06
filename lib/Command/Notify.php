@@ -244,13 +244,6 @@ class Notify extends Base {
         }
 	}
 
-	#private function readEvents(): array {
-    #	if ($this->fd === null) return [];
-	#	$events = inotify_read($this->fd);
-	#	$parsedEvents = array_map([$this, 'parseEvent'], $events);
-	#	return $this->deduplicateEvents(call_user_func_array('array_merge', $parsedEvents));
-	#}
-
 	public function listen(OutputInterface $output): void {
 		if ($this->fd === null) return;
 
