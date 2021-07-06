@@ -164,17 +164,34 @@ class Notify extends Base {
             if ($mask & \IN_MOVED_FROM) 
             {
                 $scanPath = $path;
-                if( $mask & \IN_ISDIR ) $this->unregister( $fullPath );
+                if( $mask & \IN_ISDIR ) 
+                {
+                    $this->unregister( $fullPath );
+                }
             }
             elseif ($mask & \IN_MOVED_TO) 
             {
                 $scanPath = $path;
-                if( $mask & \IN_ISDIR ) $this->register( $fullPath );
+                if( $mask & \IN_ISDIR ) 
+                {
+                    $this->register( $fullPath );
+                }
             }
             elseif ($mask & \IN_DELETE) 
             {
                 $scanPath = $path;
-                if( $mask & \IN_ISDIR ) $this->unregister( $fullPath );
+                if( $mask & \IN_ISDIR ) 
+                {
+                    // there is not need to scan subfolder, because they are deleted too
+                    foreach( array_keys($toProcess) as $_scanPath )
+                    {
+                        if( strpos($_scanPath, $scanPath) === 0 )
+                        {
+                            unset($toProcess[$_scanPath]);
+                        }
+                    }
+                    $this->unregister( $fullPath );
+                }
             }
             elseif ($mask & \IN_MODIFY) 
             {
@@ -183,17 +200,19 @@ class Notify extends Base {
             elseif ($mask & \IN_CREATE) 
             {
                 $scanPath = $path . '/' . $name;
-                if( $mask & \IN_ISDIR ) $this->register( $path);
+                if( $mask & \IN_ISDIR ) 
+                {
+                    $this->register( $path);
+                }
             }
             
             if( $scanPath != null )
             {
-                $toProcess[] = $scanPath;
+                $toProcess[$scanPath] = true;
             }
         }
         
-        $toProcess = array_unique($toProcess);
-        foreach( $toProcess as $path )
+        foreach( array_keys($toProcess) as $path )
         {
             try
             {
