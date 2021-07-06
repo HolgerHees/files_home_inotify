@@ -2,6 +2,10 @@
 
 Adds support detecting changes in all local user home folder with occ files:notify
 
+## Credits
+  
+This project was inspired by https://github.com/icewind1991/files_inotify
+
 ## Requirements
 
 This app uses the php inotify extensions which is required to be installed before this app can be enabled.
