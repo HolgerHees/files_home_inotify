@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<info>
+	<id>files_home_inotify</id>
+	<name>INotify file watcher for user home folder</name>
+	<summary></summary>
+	<description><![CDATA[]]>
+	</description>
+	<licence>AGPL</licence>
+	<author>Holger Hees</author>
+	<namespace>Files_Home_INotify</namespace>
+	<version>0.1.10</version>
+	<types>
+		<filesystem/>
+	</types>
+
+	<dependencies>
+        <lib>inotify</lib>
+		<nextcloud min-version="20" max-version="22"/>
+	</dependencies>
+    
+   	<commands>
+		<command>OCA\Files_Home_INotify\Command\Notify</command>
+    </commands>
+
+	<category>files</category>
+	<website>https://github.com/holger.hees/files_home_inotify</website>
+	<bugs>https://github.com/holger.hees/files_home_inotify/issues</bugs>
+	<repository type="git">https://github.com/holger.hees/files_home_inotify.git</repository>
+</info> 
