@@ -24,6 +24,7 @@ namespace OCA\Files_Home_INotify\Command;
 use OC\DB\Connection;
 use OC\DB\ConnectionAdapter;
 use OC\Core\Command\Base;
+use OC\Files\Filesystem;
 use OCP\IUserManager;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\NotFoundException;
@@ -39,14 +40,17 @@ class Notify extends Base {
 	private $fd;
 
 	private $pathMap = [];
+	private $moveMap = [];
 	private $userMap = [];
 	
-	public function __construct(IUserManager $userManager) {
+	public function __construct(IUserManager $userManager) 
+	{
 		$this->userManager = $userManager;
 		parent::__construct();
 	}
 
-	protected function configure() {
+	protected function configure() 
+	{
 		parent::configure();
 
 		$this
@@ -54,7 +58,8 @@ class Notify extends Base {
 			->setDescription('watch for file changes');
 	}
 	
-	protected function execute(InputInterface $input, OutputInterface $output): int {
+	protected function execute(InputInterface $input, OutputInterface $output): int 
+	{
         $this->fd = inotify_init();
         
         $users = $this->userManager->search('');
@@ -70,14 +75,16 @@ class Notify extends Base {
         return 0;
 	}
 	
-	private function getDirectoryIterator(string $path): \Iterator {
+	private function getDirectoryIterator(string $path): \Iterator 
+	{
 		return new \RecursiveIteratorIterator(
 			new \RecursiveDirectoryIterator($path,
 				\FilesystemIterator::CURRENT_AS_PATHNAME + \FilesystemIterator::SKIP_DOTS),
 			\RecursiveIteratorIterator::SELF_FIRST);
 	}
 
-	private function register($basePath): void {
+	private function register($basePath): void 
+	{
 		$iterator = $this->getDirectoryIterator($basePath);
 
 		$this->watchPath($basePath);
@@ -87,19 +94,8 @@ class Notify extends Base {
 		}
 	}
 
-	private function unregister($basePath): void {
-		foreach( $this->pathMap as $descriptor => $path )
-		{
-            if( strpos($path, $basePath) === 0 )
-            {
-                inotify_rm_watch($this->fd,$descriptor);
-                unset($this->pathMap[$descriptor]);
-                #error_log("unwatch " . $path);
-            }
-		}
-	}
-	
-	private function watchPath(string $path): void {
+	private function watchPath(string $path): void 
+	{
 		if ($this->fd === null) return;
 		# The IN_MODIFY event is emitted on a file content change (e.g. via the write() syscall) while IN_CLOSE_WRITE occurs on closing the changed file. 
 		# It means each change operation causes one IN_MODIFY event (it may occur many times during manipulations with an open file) whereas IN_CLOSE_WRITE is emitted only once (on closing the file). 
@@ -108,7 +104,8 @@ class Notify extends Base {
         #error_log("watch " . $path);
 	}
 	
-	protected function reconnectToDatabase(OutputInterface $output): Connection {
+	protected function reconnectToDatabase(OutputInterface $output): Connection 
+	{
 		$connection = \OC::$server->get(Connection::class);
 		try {
 			$connection->close();
@@ -132,9 +129,53 @@ class Notify extends Base {
 		return $connection;
 	}
 	
-	private function readEvents(): array {
+	private function readEvents(): array 
+	{
     	if ($this->fd === null) return [];
 		return inotify_read($this->fd);
+    }
+    
+    private function processMove( $cookie ) 
+    {
+        if( !isset($this->moveMap[$cookie]['from']) || !isset($this->moveMap[$cookie]['to']) ) 
+        {
+            return;
+        }
+        
+        $from = $this->moveMap[$cookie]['from'];
+        $to = $this->moveMap[$cookie]['to'];
+        foreach( $this->pathMap as $descriptor => $path )
+        {
+            if( strpos($path, $from) === 0 )
+            {
+                $this->pathMap[$descriptor] = str_replace($from,$to,$path);
+            }
+        }
+        
+        unset($this->moveMap[$cookie]);
+    }
+    
+    private function processDelete($toProcess,$scanPath,$fullPath)
+    {
+                    
+        // there is not need to scan subfolder, because they are deleted too
+        foreach( array_keys($toProcess) as $_scanPath )
+        {
+            if( strpos($_scanPath, $scanPath) === 0 )
+            {
+                unset($toProcess[$_scanPath]);
+            }
+        }
+        // clean the folder itself and all subfolders
+        foreach( $this->pathMap as $descriptor => $path )
+        {
+            if( strpos($path, $fullPath) === 0 )
+            {
+                unset($this->pathMap[$descriptor]);
+            }
+        }
+        
+        return $toProcess;
     }
 	
 	private function processEvents(OutputInterface $output)
@@ -163,12 +204,26 @@ class Notify extends Base {
             
             $fullPath = $path . '/' . $name;
             $scanPath = null;
-            if ($mask & \IN_MOVED_FROM) 
+
+            if( $mask & \IN_ISDIR )
+            {
+                $cookie = $event['cookie'];
+                if( ($mask & \IN_MOVED_TO) || ($mask & \IN_MOVED_FROM) )
+                {
+                    if( !isset($this->moveMap[$cookie]) )
+                    {
+                        $this->moveMap[$cookie] = [];
+                    }
+                }
+            }
+                       
+            if( $mask & \IN_MOVED_FROM ) 
             {
                 $scanPath = $path;
                 if( $mask & \IN_ISDIR ) 
                 {
-                    $this->unregister( $fullPath );
+                    $this->moveMap[$event['cookie']]['from'] = $fullPath;
+                    $this->processMove($cookie);
                 }
             }
             elseif ($mask & \IN_MOVED_TO) 
@@ -176,7 +231,8 @@ class Notify extends Base {
                 $scanPath = $path;
                 if( $mask & \IN_ISDIR ) 
                 {
-                    $this->register( $fullPath );
+                    $this->moveMap[$event['cookie']]['to'] = $fullPath;
+                    $this->processMove($cookie);
                 }
             }
             elseif ($mask & \IN_DELETE) 
@@ -184,15 +240,7 @@ class Notify extends Base {
                 $scanPath = $path;
                 if( $mask & \IN_ISDIR ) 
                 {
-                    // there is not need to scan subfolder, because they are deleted too
-                    foreach( array_keys($toProcess) as $_scanPath )
-                    {
-                        if( strpos($_scanPath, $scanPath) === 0 )
-                        {
-                            unset($toProcess[$_scanPath]);
-                        }
-                    }
-                    $this->unregister( $fullPath );
+                    $toProcess = $this->processDelete($toProcess,$scanPath,$fullPath);
                 }
             }
             elseif ($mask & \IN_CLOSE_WRITE) 
@@ -230,21 +278,28 @@ class Notify extends Base {
                     }
                 }          
                 
+                echo "File " . $path . " ...";
+                $start = microtime(true);
                 $scanner->scan($path, false, null);
-                echo "File " . $path . " processed\n";
+                echo " processed in " . ( microtime(true) - $start ) . " ms\n";
             }
             catch( NotFoundException $e) 
             {
-                echo "File " . $path . " not exists anymore\n";
+                echo " does not exists anymore\n";
 			}
 			catch( LockedException $e)
 			{
-                echo "File " . $path . " locked\n";
+                echo " locked\n";
+			}
+			catch (\Exception $e) 
+			{
+                echo " failed\n";
 			}
         }
 	}
 
-	public function listen(OutputInterface $output): void {
+	public function listen(OutputInterface $output): void 
+	{
 		if ($this->fd === null) return;
 
 		stream_set_blocking($this->fd, true);
@@ -263,7 +318,8 @@ class Notify extends Base {
 		}
 	}
 
-	public function stop(): void {
+	public function stop(): void 
+	{
 		if ($this->fd === null) return;
 		$fd = $this->fd;
 		$this->fd = null;
